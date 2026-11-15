@@ -27,6 +27,8 @@ if 'client' not in st.session_state:
     st.session_state.client=server.test_client()
 client=st.session_state.client
 
+st.markdown('<style>\n.stApp,[data-testid="stAppViewContainer"]{background-color:#eff9f4!important;background-image:radial-gradient(ellipse at 12% 8%,#ffffff 0 7%,transparent 7.3%),radial-gradient(ellipse at 90% 20%,#ffffff 0 9%,transparent 9.3%),radial-gradient(ellipse at 10% 100%,#cfe9c9 0 25%,transparent 25.3%),radial-gradient(ellipse at 90% 100%,#dcefc5 0 30%,transparent 30.3%)!important;background-attachment:fixed!important;color:#263d38!important}\n.block-container{max-width:860px;padding-top:1.5rem}\n[data-testid="stHeader"]{background:transparent!important}\nh1,h2,h3{color:#284d43!important}\n.hero{background:#fffdf3!important;border:2px solid #d5e9ce!important;border-radius:30px!important;padding:22px!important;box-shadow:0 6px 0 #deebd3}\n.hero .mascot{font-size:42px!important}.hero h1{font-size:32px!important}\n[data-testid="stVerticalBlockBorderWrapper"]{background:#ffffffdc;border-radius:22px!important}\ndiv.stButton>button{border-radius:18px!important;border:1px solid #ccdfd5!important;background:#fffdf8!important;color:#264c40!important;font-weight:700!important;min-height:48px}\ndiv.stButton>button[kind="primary"],div.stFormSubmitButton>button{background:#2e705b!important;color:white!important;border-color:#2e705b!important}\n[data-testid="stSidebar"]{background:#e3f0df!important}\ninput,textarea,[data-baseweb="select"]>div{background:white!important;color:#263d38!important}\n[data-testid="stMarkdownContainer"] p,[data-testid="stWidgetLabel"] p{color:#263d38}\n[data-testid="stCode"] pre,[data-testid="stCode"] code{background:#fff4ca!important;color:#294b40!important}\n</style>',unsafe_allow_html=True)
+
 def token():
     with client.session_transaction() as sess:
         val=sess.get('csrf')
@@ -56,10 +58,9 @@ try: state=call('/api/state'+('?trip='+str(st.session_state.trip_id) if st.sessi
 except ValueError: state=None
 if not state:
     screen=st.session_state.get('welcome','intro')
-    st.markdown('<div class="hero"><span class="pill">가족끼리만 보는 여행 이야기</span><div class="mascot">🐰 🧳 ☁️</div><h1>나는 신나게,<br>우리 가족은 편하게.</h1><p><b>안심여행</b> · 잘 놀고 있다는 안부, 한 번의 터치면 충분해요.</p></div>',unsafe_allow_html=True)
+    st.markdown('<div class="hero"><div class="mascot">☁️ 🐰 🎒 🌳</div><h1>안심여행</h1><p>같이 떠나는 마음, 한 번의 안부.</p></div>',unsafe_allow_html=True)
     if screen=='intro':
-        for icon,title,desc in [('💌','한 번에 안부 톡','긴 글 없이 “잘 지내요”만 눌러도 OK!'),('📸','사진은 올리고 싶을 때만','사진 한 장 또는 짧은 글. 둘 다 쓸 필요 없어요.'),('🎁','미션은 보너스','하고 싶은 미션을 골라 추억과 용돈 기록을 남겨요.')]:
-            st.markdown(f'<div class="feature"><strong>{icon} {title}</strong><p>{desc}</p></div>',unsafe_allow_html=True)
+        st.markdown('### 📍 가족 지도　💌 안부　🎁 미션')
         if st.button('🚀 우리 가족 여행 시작하기',type='primary',use_container_width=True):
             st.session_state.welcome='login';st.rerun()
         st.caption('위치는 내 동의가 있을 때만 · 실제 송금 없음 · 가족 초대 코드로 참여')
@@ -85,7 +86,7 @@ with st.sidebar:
     st.caption('Streamlit Cloud 재시작/재배포 시 로컬 데이터가 사라질 수 있습니다. 장기 운영에는 영구 저장소가 필요합니다.')
 
 st.title('🐰 안심여행')
-st.caption('오늘도 잘 놀고 있다는, 작고 다정한 안부')
+
 with st.expander('🎒 여행 만들기 · 초대 코드로 참여',expanded=not state['trips']):
     a,b=st.columns(2)
     if a.button('✨ 새 여행 만들기',use_container_width=True): st.session_state.setup='create'
@@ -127,7 +128,7 @@ def target_select(key):
     return st.selectbox('대상 자녀',children,format_func=who,key=key) if children else None
 
 def upload_form(key,mission=None):
-    st.caption('사진이나 글 중 하나만 남겨도 충분해요. 매번 올릴 필요 없어요!')
+    
     with st.form(key,clear_on_submit=True):
         photo=st.file_uploader('📸 사진 한 장 (선택 · 8MB 이하)',type=['png','jpg','jpeg','webp'])
         body=st.text_input('💬 한 줄 (선택)',max_chars=200,placeholder='예: 무사히 도착! / 맛있는 거 먹는 중 🍜')
@@ -160,41 +161,72 @@ def live_overview():
 st.subheader(trip['title'])
 st.caption(f"{trip['start']} ~ {trip['end']} · {'부모' if is_parent else '자녀'}")
 live_overview()
-st.caption('상단 진척도·안부 알림은 화면을 열어 둔 동안 12초 주기로 갱신됩니다. 아래 목록은 새로고침으로 갱신하세요.')
+
 if st.button('↻ 최신 내용 새로고침'): st.rerun()
-menus=['홈','일정','사진·안부','위치','미션·용돈','가족']
-icons=['🏡','🧭','💌','📍','🎁','🐣']
+
+@st.fragment(run_every='12s')
+def family_map():
+    import folium
+    import html
+    import streamlit.components.v1 as components
+    fresh=call('/api/state?trip='+str(selected))
+    pins=[m for m in fresh['members'] if m['lat'] is not None and m['lon'] is not None]
+    st.markdown('### 📍 우리 가족, 지금')
+    if pins:
+        center=[sum(m['lat'] for m in pins)/len(pins),sum(m['lon'] for m in pins)/len(pins)]
+        fmap=folium.Map(location=center,zoom_start=14,tiles='CartoDB positron',control_scale=True)
+        colors=['#2e705b','#b96335','#5469a5','#9a5180']
+        for i,m in enumerate(pins):
+            name=html.escape(m['name'])
+            label='<div style="white-space:nowrap;background:white;border:3px solid '+colors[i%4]+';border-radius:22px;padding:7px 11px;color:#263d38;font:700 13px sans-serif;box-shadow:0 3px 8px #0002">'+('🐰 ' if m['user']==uid else '🐻 ')+name+'</div>'
+            folium.Marker([m['lat'],m['lon']],icon=folium.DivIcon(html=label,icon_size=(120,42)),tooltip=name,popup=html.escape('갱신 '+str(m['updated']))).add_to(fmap)
+        if len(pins)>1: fmap.fit_bounds([[m['lat'],m['lon']] for m in pins],padding=(45,45),max_zoom=16)
+        components.html(fmap.get_root().render(),height=410,scrolling=False)
+        st.caption(' · '.join(m['name'] for m in pins)+' · 최근 5분 내 위치')
+    else:
+        st.markdown('<div class="hero" style="text-align:center"><div style="font-size:55px">☁️ 🌳 🐰 🏕️ 🌳</div><h3>아직 공유된 위치가 없어요</h3><p>아래 📍 버튼으로 시작해요</p></div>',unsafe_allow_html=True)
+
+if st.session_state.get('page','홈') in ('홈','위치'):
+    family_map()
+    with st.popover('📍 내 위치',use_container_width=True):
+        st.caption('여행 기간에만 가족에게 공유 · 언제든 중지')
+        if not me['consent']:
+            if st.button('동의하고 켜기',type='primary',use_container_width=True): act('consent',enabled=True)
+        else:
+            from streamlit_geolocation import streamlit_geolocation
+            loc=streamlit_geolocation()
+            if loc and loc.get('latitude') is not None:
+                if st.button('📍 현재 위치 보내기',type='primary',use_container_width=True): act('location',lat=loc['latitude'],lon=loc['longitude'])
+            st.caption('HTTPS · 브라우저 위치 권한 필요 · 수동 갱신')
+            if st.button('공유 끄기 · 좌표 삭제',use_container_width=True): act('consent',enabled=False)
+
+menus=['홈','일정','사진·안부','미션·용돈','가족']
+icons=['🗺️','🧭','💌','🎁','🐣']
 for row in range(2):
     columns=st.columns(3)
-    for col,index in zip(columns,range(row*3,row*3+3)):
+    for col,index in zip(columns,range(row*3,min(row*3+3,len(menus)))):
         menu=menus[index]
         if col.button(icons[index]+' '+menu,key='nav'+menu,use_container_width=True,type='primary' if st.session_state.get('page','홈')==menu else 'secondary'):
             st.session_state.page=menu;st.rerun()
 page=st.session_state.get('page','홈')
+if page=='위치': page='홈'
 st.divider()
 if page=='홈':
-    st.markdown('<div class="hero"><div class="mascot">🐰 💌</div><h2>긴 보고 대신, 짧은 안부.</h2><p>오늘도 즐겁게 여행 중인가요?<br>사진 없이 버튼 한 번만 눌러도 괜찮아요.</p></div>',unsafe_allow_html=True)
     if not is_parent:
-        if st.button('💚 잘 지내요! 안부 한 번에 보내기',type='primary',use_container_width=True): act('well')
-        st.caption('부모님의 미응답 안부 요청에도 함께 답장해요.')
+        if st.button('💚 잘 지내요!',type='primary',use_container_width=True): act('well')
     else:
-        st.subheader('🐣 우리 가족 안부')
-        children=[m for m in state['members'] if m['role']=='child']
-        if not children: st.info('가족 메뉴의 초대 코드를 자녀에게 알려 주세요.')
-        for m in children:
-            with st.container(border=True):
-                st.write('**'+m['name']+'**')
-                recent=next((p for p in state['posts'] if p['user']==m['user']),None)
-                st.caption('최근 소식: '+recent['created'].replace('T',' ') if recent else '아직 소식이 없어요. 미응답은 위험을 뜻하지 않아요.')
-                if st.button('💌 안부 물어보기',key='homecheck'+str(m['user'])): act('check',target=m['user'])
+        kids=[m for m in state['members'] if m['role']=='child']
+        for m in kids:
+            if st.button('💌 '+m['name']+' · 안부 묻기',key='homecheck'+str(m['user']),use_container_width=True): act('check',target=m['user'])
+    a,b=st.columns(2)
+    if a.button('📸 한 장 남기기',use_container_width=True): st.session_state.page='사진·안부';st.rerun()
+    if b.button('🎁 용돈 미션',use_container_width=True): st.session_state.page='미션·용돈';st.rerun()
     next_plan=next((p for p in state['plans'] if p['status']!='완료'),None)
-    if next_plan:
-        st.subheader('🧭 다음 여행 한 걸음')
-        st.write(next_plan['title']);st.caption(next_plan['at'].replace('T',' '))
-    st.caption('기록은 의무가 아니에요. 일정과 미션은 필요할 때만 이용하세요.')
-    if st.button('📸 사진이나 한 줄 남기기',use_container_width=True): st.session_state.page='사진·안부';st.rerun()
+    if next_plan: st.info('🧭 다음 · '+next_plan['title']+' · '+next_plan['at'].replace('T',' '))
+    with st.expander('💌 가족 초대 코드'):
+        st.code(trip['code'],language=None)
 elif page=='일정':
-    st.info('진행 상태는 실제 도착 여부를 자동 판정하지 않습니다. 가족이 직접 변경하세요.')
+
     for p in state['plans']:
         with st.container(border=True):
             st.write('**'+p['title']+'**');st.caption(p['at'].replace('T',' ')+' · '+p['status'])
@@ -224,28 +256,6 @@ elif page=='사진·안부':
             st.caption(q['created']+(' / '+q['response'] if q['answered'] else ''))
     for p in state['posts']:
         with st.container(border=True): show_post(p,True)
-elif page=='위치':
-    st.subheader('📍 동의하고 위치 공유')
-    st.info('여행 기간에만 공유할 수 있고 중지하면 좌표가 삭제됩니다. 자동/백그라운드 추적은 하지 않으며 아래 버튼으로 현재 위치를 직접 갱신합니다. 최근 5분 내 좌표만 표시됩니다.')
-    st.caption('위치 권한에는 HTTPS가 필요합니다. 브라우저에서 위치 접근을 허용해 주세요. 지도 링크를 열면 좌표가 외부 지도 서비스에 전달됩니다.')
-    if not me['consent']:
-        st.caption('아래 버튼을 누르면 여행 기간 중 현재 위치를 이 그룹의 가족에게 공유하는 데 동의합니다.')
-        if st.button('📍 동의하고 위치 공유 켜기',type='primary'): act('consent',enabled=True)
-    if me['consent']:
-        from streamlit_geolocation import streamlit_geolocation
-        loc=streamlit_geolocation()
-        if loc and loc.get('latitude') is not None:
-            if st.button('이 위치를 가족에게 공유'):
-                act('location',lat=loc['latitude'],lon=loc['longitude'])
-    if st.button('공유 중지 · 내 좌표 삭제'): act('consent',enabled=False)
-    for m in state['members']:
-        with st.container(border=True):
-            st.write('**'+m['name']+'**')
-            if m['lat'] is not None:
-                st.write(f"{m['lat']:.5f}, {m['lon']:.5f}")
-                st.link_button('지도에서 보기 ↗',f"https://www.openstreetmap.org/?mlat={m['lat']}&mlon={m['lon']}#map=16/{m['lat']}/{m['lon']}")
-                st.caption('마지막 갱신 '+m['updated'])
-            else: st.caption('공유 중이 아니거나 최근 위치가 없습니다.')
 elif page=='미션·용돈':
     st.info('실제 송금은 하지 않습니다. 부모의 지급 기록과 자녀의 수령 확인만 저장합니다. 안전 연락과 위치 공유를 용돈의 조건으로 삼지 마세요.')
     if is_parent and st.button('＋ 새 미션 제안',use_container_width=True): st.session_state.add_mission=not st.session_state.get('add_mission',False)
@@ -290,4 +300,5 @@ elif page=='가족':
                 role='parent' if m['role']=='child' else 'child'
                 with st.popover('역할 관리 · '+str(m['user'])):
                     if st.button('부모로 변경' if role=='parent' else '자녀로 변경',key='role'+str(m['user'])): act('role',target=m['user'],role=role)
-st.caption('사진의 GPS 등 EXIF 정보는 업로드 시 제거됩니다. 상용 운영 전 개인정보 처리방침·보호자 동의·보관 및 삭제 정책과 보안 검토가 필요합니다.')
+with st.expander('🔒 개인정보 · 이용 안내'):
+    st.caption('위치는 여행 기간 중 동의할 때만 공유하며 5분이 지난 좌표는 숨깁니다. 지도 표시에 외부 지도 서비스를 사용합니다. 사진 EXIF는 제거됩니다. 실제 송금 기능은 없습니다. Cloud 로컬 저장은 영구 보존되지 않을 수 있습니다.')
