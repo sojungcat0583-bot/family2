@@ -17,10 +17,13 @@ st.set_page_config(page_title='안심여행 · 우리 가족 여행 메이트', 
 st.markdown('<style>\n:root{color-scheme:light}\n.stApp,[data-testid="stAppViewContainer"], [data-testid="stHeader"]{background:#fff9f2!important;color:#352d4b!important}\n.block-container{max-width:820px;padding-top:2rem;padding-bottom:5rem}\n[data-testid="stSidebar"]{background:#f1eaff!important}\n[data-testid="stMarkdownContainer"], [data-testid="stMarkdownContainer"] p,label,[data-testid="stWidgetLabel"] p,h1,h2,h3{color:#352d4b!important}\n[data-testid="stCaptionContainer"], [data-testid="stCaptionContainer"] p{color:#645c73!important}\n[data-testid="stForm"],[data-testid="stVerticalBlockBorderWrapper"]>div{border-radius:22px!important}\n[data-testid="stForm"]{background:#ffffff!important;border:1px solid #e2d8ed!important;padding:20px!important}\ninput,textarea,[data-baseweb="input"],[data-baseweb="textarea"], [data-baseweb="select"]>div{background:#fff!important;color:#352d4b!important;-webkit-text-fill-color:#352d4b!important;border-color:#b4a4c6!important;caret-color:#352d4b}\n[data-testid="stCode"], [data-testid="stCode"] pre, [data-testid="stCode"] code{background:#f0eafa!important;color:#352d4b!important}\ninput::placeholder,textarea::placeholder{color:#746c80!important;-webkit-text-fill-color:#746c80!important}\n[data-baseweb="popover"],[data-baseweb="menu"], [role="listbox"],[role="option"]{background:#fff!important;color:#352d4b!important}\nbutton{border-radius:16px!important;min-height:48px!important;font-weight:650!important}\nbutton[kind="secondary"],button[kind="tertiary"],button[data-testid="stBaseButton-secondaryFormSubmit"]{background:#fff!important;color:#49385f!important;border:1px solid #cfc0e0!important}\nbutton[kind="secondary"] p,button[kind="tertiary"] p{color:#49385f!important}\nbutton[kind="primary"],button[data-testid="stBaseButton-primaryFormSubmit"]{background:#69449b!important;border-color:#69449b!important;color:#fff!important}\nbutton[kind="primary"] p,button[data-testid="stBaseButton-primaryFormSubmit"] p{color:#fff!important}\nbutton:hover{filter:brightness(.96)}button:focus-visible{outline:3px solid #a6602d!important}\n[data-testid="stAlert"]{background:#f0eafa!important;color:#352d4b!important}\n.hero{background:linear-gradient(130deg,#eee3ff,#ffe9db);padding:30px 26px;border-radius:30px;border:1px solid #e4d3ec;margin-bottom:22px;color:#352d4b}\n.hero .mascot{font-size:58px;letter-spacing:9px}.hero h1{font-size:34px;line-height:1.3;margin:10px 0}.hero p{color:#51445f!important;font-size:16px}\n.pill{display:inline-block;background:#fff8fd;color:#62408a;padding:5px 12px;border-radius:30px;font-size:13px;font-weight:700}\n.feature{background:#fff;border:1px solid #e9dfee;border-radius:20px;padding:20px;margin:10px 0;color:#352d4b}.feature strong{font-size:18px}\n@media(max-width:640px){.block-container{padding:1.2rem 1rem 4rem}.hero{padding:25px 20px}.hero h1{font-size:29px}.hero .mascot{font-size:48px}}\n</style>',unsafe_allow_html=True)
 
 @st.cache_resource
-def backend():
+def backend_scope():
     scope={'__name__':'__main__'}
     exec(BACKEND_SOURCE,scope)
-    return scope['app']
+    return scope
+
+def backend():
+    return backend_scope()['app']
 
 server=backend()
 if 'client' not in st.session_state:
@@ -53,42 +56,64 @@ def run(path,data=None,form=None):
         return result
     except ValueError as e: st.error(str(e))
 
+
+st.markdown("""<style>
+:root {color-scheme:light!important}
+.stApp,[data-testid="stAppViewContainer"]{color:#162c25!important}
+.stApp p,.stApp label,.stApp h1,.stApp h2,.stApp h3,.stApp h4,.stApp small,.stApp summary{color:#162c25!important;opacity:1!important}
+input,textarea,[data-baseweb="input"],[data-baseweb="base-input"],[data-baseweb="textarea"],[data-baseweb="select"]>div{background:#fff!important;color:#162c25!important;-webkit-text-fill-color:#162c25!important;border-color:#718a7c!important}
+input::placeholder,textarea::placeholder{color:#52665d!important;opacity:1!important;-webkit-text-fill-color:#52665d!important}
+[data-testid="stForm"],[data-testid="stExpander"],details,[data-testid="stVerticalBlockBorderWrapper"],[data-testid="stAlert"]{background:#fffefa!important;color:#162c25!important;border-color:#92ab9c!important;border-radius:18px}
+[data-baseweb="popover"],[role="listbox"],[role="option"],[data-baseweb="calendar"],[data-baseweb="calendar"] *{background:#fff!important;color:#162c25!important}
+button{background:#fff!important;color:#163f30!important;border-color:#718a7c!important}
+button p,button span{color:inherit!important}
+button[kind="primary"], [data-testid="stFormSubmitButton"] button{background:#215c46!important;color:#fff!important}
+button[kind="primary"] p,[data-testid="stFormSubmitButton"] button p{color:#fff!important}
+[data-testid="stSidebar"]{background:#edf5e9!important}
+[data-testid="stCode"],[data-testid="stCode"] pre,[data-testid="stCode"] code{background:#fff3ce!important;color:#162c25!important}
+.entry-logo{text-align:center;padding:55px 14px 38px;background:linear-gradient(160deg,#fffefa,#dcefd7);border:2px solid #a9c8aa;border-radius:32px;margin:20px 0 26px;box-shadow:0 8px 0 #d9e7ce}
+.entry-logo h1{font-size:40px!important;letter-spacing:-1.5px}
+</style>""",unsafe_allow_html=True)
+
 if st.session_state.pop('notice',None): st.success('가족에게 전했어요! 💌')
 try: state=call('/api/state'+('?trip='+str(st.session_state.trip_id) if st.session_state.get('trip_id') else ''))
 except ValueError: state=None
 if not state:
-    screen=st.session_state.get('welcome','intro')
-    st.markdown('<div class="hero"><div class="mascot">🏡 🐻　🐰 🎒</div><h1>안심여행</h1><p>집에서는 안심, 여행은 신나게.</p></div>',unsafe_allow_html=True)
-    if screen=='intro':
-        st.markdown('### 📍 가족 지도　💌 안부　🎁 미션')
-        if st.button('🚀 우리 가족 여행 시작하기',type='primary',use_container_width=True):
-            st.session_state.welcome='login';st.rerun()
-        st.caption('위치는 내 동의가 있을 때만 · 실제 송금 없음 · 가족 초대 코드로 참여')
+    stage=st.session_state.get('entry_stage','cover')
+    if stage=='cover':
+        st.markdown('<div class="entry-logo"><div style="font-size:76px">🏡 🐰</div><h1>안심여행</h1><p>마음은 함께, 여행은 신나게</p></div>',unsafe_allow_html=True)
+        if st.button('앱 열기 ✨',type='primary',use_container_width=True):
+            st.session_state.entry_stage='role';st.rerun()
     else:
-        c1,c2=st.columns(2)
-        if c1.button('🔑 로그인',use_container_width=True): st.session_state.welcome='login';st.rerun()
-        if c2.button('🐣 처음 왔어요',use_container_width=True): st.session_state.welcome='signup';st.rerun()
-        role=st.session_state.get('login_role','child')
-        r1,r2=st.columns(2)
-        if r1.button('🏡 부모',type='primary' if role=='parent' else 'secondary',use_container_width=True): st.session_state.login_role='parent';st.rerun()
-        if r2.button('🎒 자녀',type='primary' if role=='child' else 'secondary',use_container_width=True): st.session_state.login_role='child';st.rerun()
-        st.caption('집에서 안부를 확인해요' if role=='parent' else '여행 중 안부를 전해요')
-        signup=screen=='signup'
-        st.subheader('🐣 반가워요!' if signup else '👋 다시 만나 반가워요!')
-        with st.form('account'):
-            username=st.text_input('아이디',placeholder='영문·숫자 등 3자 이상',max_chars=40)
-            password=st.text_input('비밀번호',type='password',placeholder='가입 시 10자 이상',max_chars=200)
-            name=st.text_input('가족에게 보일 이름',max_chars=30) if signup else ''
-            if st.form_submit_button('가입하고 출발 🐣' if signup else '로그인하고 출발 ✈️',type='primary',use_container_width=True):
-                run('/api/account',dict(mode='signup' if signup else 'login',username=username,password=password,name=name,role=role))
-        if st.button('← 앱 소개로'): st.session_state.welcome='intro';st.rerun()
+        st.subheader('누구와 함께할까요?')
+        a,b=st.columns(2)
+        choice=None
+        if a.button('🏡 부모로 시작',use_container_width=True): choice='parent'
+        if b.button('🎒 자녀로 시작',use_container_width=True): choice='child'
+        if choice:
+            import secrets
+            # Each browser session gets a separate temporary identity, never a shared parent/child account.
+            with server.app_context():
+                ns=backend_scope()
+                with ns['db']() as c:
+                    guest=c.execute('INSERT INTO users(username,name,password,app_role) VALUES(?,?,?,?)',
+                        ('guest_'+secrets.token_hex(16),'부모' if choice=='parent' else '여행하는 자녀',ns['generate_password_hash'](secrets.token_urlsafe(48)),choice)).lastrowid
+            with client.session_transaction() as sess:
+                sess.clear();sess['uid']=guest;sess['csrf']=secrets.token_hex(24);sess.permanent=True
+            st.rerun()
+        if st.button('← 처음으로'): st.session_state.entry_stage='cover';st.rerun()
+    st.caption('회원가입 없는 체험 버전 · 초대 코드를 아는 사람이 참여할 수 있어요. 실제 민감정보는 올리지 마세요. 연결을 잃으면 기존 이용자로 복구할 수 없습니다.')
     st.stop()
 
 uid=state['user']['id']
 parent_mode=state['user'].get('app_role')=='parent'
 with st.sidebar:
     st.write(('🏡 ' if parent_mode else '🎒 ')+state['user']['name'])
-    if st.button('로그아웃'): run('/api/logout',{})
+    if st.button('역할 선택으로 돌아가기'):
+        st.session_state.entry_stage='role'
+        st.session_state.pop('trip_id',None)
+        st.session_state.page='홈'
+        run('/api/logout',{})
     with st.expander('여행 참여 · 만들기',expanded=not state['trips']):
         with st.form('join'):
             code=st.text_input('초대 코드')
