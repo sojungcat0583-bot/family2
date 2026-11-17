@@ -28,6 +28,7 @@ def backend(build_version):
 import hashlib
 BUILD_ID=hashlib.sha256(BACKEND_SOURCE.encode()).hexdigest()
 server=backend(BUILD_ID)
+st.caption('🛠 미션 권한 수정본 · MISSION-04')
 if st.session_state.get('backend_build')!=BUILD_ID:
     st.session_state.pop('client',None)
     st.session_state.backend_build=BUILD_ID
@@ -141,15 +142,36 @@ if not state:
     st.caption('회원가입 없는 체험 버전 · 초대 코드를 아는 사람이 참여할 수 있어요. 실제 민감정보는 올리지 마세요. 연결을 잃으면 기존 이용자로 복구할 수 없습니다.')
     st.stop()
 
+def switch_family_view(target):
+    import secrets
+    profiles=st.session_state.setdefault('family_profiles',{})
+    profiles[state['user']['app_role']]=state['user']['id']
+    with server.app_context():
+        ns=backend_scope()
+        with ns['db']() as c:
+            target_id=profiles.get(target)
+            if not target_id or not c.execute('SELECT 1 FROM users WHERE id=?',(target_id,)).fetchone():
+                target_id=c.execute('INSERT INTO users(username,name,password,app_role) VALUES(?,?,?,?)',('guest_'+secrets.token_hex(16),'부모' if target=='parent' else '여행하는 자녀',ns['generate_password_hash'](secrets.token_urlsafe(48)),target)).lastrowid
+                profiles[target]=target_id
+            # Same-device preview pairs only the current session's two identities.
+            for travel in state['trips']:
+                c.execute('INSERT OR IGNORE INTO members(trip,user,role) VALUES(?,?,?)',(travel['id'],target_id,target))
+    with client.session_transaction() as sess:
+        sess.clear();sess['uid']=target_id;sess['csrf']=secrets.token_hex(24);sess.permanent=True
+    st.session_state.page='홈'
+    st.rerun()
+
+st.session_state.setdefault('family_profiles',{})[state['user']['app_role']]=state['user']['id']
+a,b=st.columns(2)
+if a.button('🏡 부모 화면',use_container_width=True,disabled=state['user']['app_role']=='parent'):
+    switch_family_view('parent')
+if b.button('🎒 자녀 화면',use_container_width=True,disabled=state['user']['app_role']=='child'):
+    switch_family_view('child')
+st.caption('같은 기기 체험 전환 · 마지막 공유 위치와 기록은 유지돼요. 부모 화면에서는 자녀 GPS가 새로 전송되지 않아요.')
 uid=state['user']['id']
 parent_mode=state['user'].get('app_role')=='parent'
 with st.sidebar:
     st.write(('🏡 ' if parent_mode else '🎒 ')+state['user']['name'])
-    if st.button('역할 선택으로 돌아가기'):
-        st.session_state.entry_stage='role'
-        st.session_state.pop('trip_id',None)
-        st.session_state.page='홈'
-        run('/api/logout',{})
     st.caption('위치는 동의 후 수동 전송 · 앱을 닫으면 자동 추적하지 않습니다. 로컬 데이터는 재배포 시 보존되지 않을 수 있습니다.')
 def travel_entry():
     with st.expander('💌 초대 코드로 참여',expanded=parent_mode):
