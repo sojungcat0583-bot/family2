@@ -75,13 +75,27 @@ button[kind="primary"] p,[data-testid="stFormSubmitButton"] button p{color:#fff!
 .entry-logo h1{font-size:40px!important;letter-spacing:-1.5px}
 </style>""",unsafe_allow_html=True)
 
+
+st.markdown("""<style>
+/* Explicit background and foreground together, including Streamlit dark alert variants. */
+[data-testid="stAlert"], [data-testid="stAlertContainer"], [data-testid="stNotification"], [data-testid="stAlert"]>div {background:#fff9df!important;color:#192f27!important;border-color:#b59e50!important}
+[data-testid="stAlert"] *,[data-testid="stAlertContainer"] *,[data-testid="stNotification"] *{color:#192f27!important;-webkit-text-fill-color:#192f27!important;opacity:1!important}
+[data-testid="stTextInputRootElement"],[data-testid="stDateInput"] [data-baseweb="input"],[data-testid="stTimeInput"] [data-baseweb="input"],[data-testid="stNumberInputContainer"], [data-baseweb="input"]>div{background:#fff!important;color:#192f27!important}
+[data-testid="stExpander"] details,[data-testid="stExpander"] summary,[data-testid="stExpanderDetails"],[data-testid="stForm"]{background:#fffef9!important;color:#192f27!important}
+.entry-logo{max-width:410px;margin:12px auto 24px!important;padding:20px 16px!important}
+.walking-logo,.travel-art{display:block;font-size:42px;line-height:1.3;letter-spacing:2px;text-align:center}
+.entry-logo h1{margin:8px 0 4px!important;font-size:34px!important}
+.entry-logo p{margin:0!important}
+.travel-banner{max-width:430px;margin:0 auto 20px;padding:18px;background:linear-gradient(#e8f6ff 0 62%,#e3efcc 62%);border:2px solid #a9c6a0;border-radius:25px;text-align:center}
+</style>""",unsafe_allow_html=True)
+
 if st.session_state.pop('notice',None): st.success('가족에게 전했어요! 💌')
 try: state=call('/api/state'+('?trip='+str(st.session_state.trip_id) if st.session_state.get('trip_id') else ''))
 except ValueError: state=None
 if not state:
     stage=st.session_state.get('entry_stage','cover')
     if stage=='cover':
-        st.markdown('<div class="entry-logo"><div style="font-size:76px">🏡 🐰</div><h1>안심여행</h1><p>마음은 함께, 여행은 신나게</p></div>',unsafe_allow_html=True)
+        st.markdown('<div class="entry-logo"><div class="walking-logo">☀️ 🗺️<br>🐰🎒 🧳<br>🌿 👣 🌼</div><h1>안심여행</h1><p>마음은 함께, 여행은 신나게</p></div>',unsafe_allow_html=True)
         if st.button('앱 열기 ✨',type='primary',use_container_width=True):
             st.session_state.entry_stage='role';st.rerun()
     else:
@@ -114,27 +128,29 @@ with st.sidebar:
         st.session_state.pop('trip_id',None)
         st.session_state.page='홈'
         run('/api/logout',{})
-    with st.expander('여행 참여 · 만들기',expanded=not state['trips']):
+    st.caption('위치는 동의 후 수동 전송 · 앱을 닫으면 자동 추적하지 않습니다. 로컬 데이터는 재배포 시 보존되지 않을 수 있습니다.')
+def travel_entry():
+    with st.expander('💌 초대 코드로 참여',expanded=parent_mode):
         with st.form('join'):
-            code=st.text_input('초대 코드')
-            if st.form_submit_button('참여하기'):
+            code=st.text_input('초대 코드',placeholder='자녀가 보내준 코드를 입력하세요')
+            if st.form_submit_button('참여하기',type='primary',use_container_width=True):
                 try:
                     result=call('/api/trips',dict(action='join',code=code));st.session_state.trip_id=result['trip'];st.rerun()
                 except ValueError as e: st.error(str(e))
-        if not parent_mode:
+    if not parent_mode:
+        with st.expander('🎒 새 여행 만들기',expanded=True):
             with st.form('create'):
-                title=st.text_input('여행 이름',max_chars=80)
+                title=st.text_input('여행 이름',placeholder='예: 부산 바다 여행',max_chars=80)
                 dates=st.date_input('여행 기간',value=(date.today(),date.today()))
-                if st.form_submit_button('여행 만들기'):
+                if st.form_submit_button('여행 만들고 초대 코드 받기',type='primary',use_container_width=True):
                     if len(dates)!=2: st.error('시작일과 종료일을 선택하세요.')
                     else:
                         try:
                             r=call('/api/trips',dict(title=title,start=str(dates[0]),end=str(dates[1])));st.session_state.trip_id=r['trip'];st.rerun()
                         except ValueError as e: st.error(str(e))
-    st.caption('위치는 동의 후 수동 전송 · 앱을 닫으면 자동 추적하지 않습니다. 로컬 데이터는 재배포 시 보존되지 않을 수 있습니다.')
 if not state['trips']:
-    st.subheader('🏡 자녀의 초대를 기다려요' if parent_mode else '🎒 여행을 시작해요')
-    st.info('왼쪽 위 메뉴에서 자녀가 보내준 초대 코드로 참여하세요.' if parent_mode else '왼쪽 위 메뉴에서 여행을 만들고 부모님께 초대 코드를 보내주세요.')
+    st.markdown('<div class="travel-banner"><span class="travel-art">☀️ 🗺️<br>🐰🎒 🧳<br>🌿 👣 🌼</span><h3>여행을 시작해요</h3></div>',unsafe_allow_html=True)
+    travel_entry()
     st.stop()
 ids=[t['id'] for t in state['trips']]
 selected=st.sidebar.selectbox('여행',ids,index=ids.index(state['trip']),format_func=lambda x:next(t['title'] for t in state['trips'] if t['id']==x))
@@ -212,11 +228,13 @@ if page=='홈':
         st.markdown('<div class="hero"><div class="mascot">☀️ 🐰 🎒 🌳</div><h3>오늘은 어디로 떠날까?</h3></div>',unsafe_allow_html=True)
         if st.button('💚 잘 지내요',type='primary',use_container_width=True): act('well')
         if st.button('📍 현재 위치 공유',use_container_width=True): st.session_state.page='위치';st.rerun()
-        with st.expander('💌 부모님 초대 코드'):
-            st.code(trip['code'],language=None)
+        st.markdown('#### 💌 부모님 초대 코드')
+        st.code(trip['code'],language=None)
         for q in state['plans']:
             if q.get('plan_user')==uid and q['status']!='완료':
                 st.info('🧭 다음 · '+q['title']);break
+    with st.expander('＋ 다른 여행 만들기 · 참여'):
+        travel_entry()
 elif page=='알림': arrival_panel()
 elif page=='일정':
     for q in state['plans']:
