@@ -116,30 +116,55 @@ if st.session_state.pop('notice',None): st.success('가족에게 전했어요! �
 try: state=call('/api/state'+('?trip='+str(st.session_state.trip_id) if st.session_state.get('trip_id') else ''))
 except ValueError: state=None
 if not state:
-    stage=st.session_state.get('entry_stage','cover')
-    if stage=='cover':
-        st.markdown('<div class="entry-logo"><div class="walking-logo">🐰🎒</div><h1>안심여행</h1><p>마음은 함께, 여행은 신나게</p></div>',unsafe_allow_html=True)
-        if st.button('앱 열기 ✨',type='primary',use_container_width=True):
-            st.session_state.entry_stage='role';st.rerun()
-    else:
-        st.subheader('누구와 함께할까요?')
-        a,b=st.columns(2)
-        choice=None
-        if a.button('🏡 부모로 시작',use_container_width=True): choice='parent'
-        if b.button('🎒 자녀로 시작',use_container_width=True): choice='child'
-        if choice:
-            import secrets
-            # Each browser session gets a separate temporary identity, never a shared parent/child account.
-            with server.app_context():
-                ns=backend_scope(BACKEND_SOURCE)
+    import secrets
+    ns=backend_scope(BACKEND_SOURCE)
+    with ns['db']() as c:
+        c.executescript('CREATE TABLE IF NOT EXISTS family_rooms(id INTEGER PRIMARY KEY,code TEXT UNIQUE); CREATE TABLE IF NOT EXISTS family_people(room INTEGER,user INTEGER,UNIQUE(room,user)); CREATE TABLE IF NOT EXISTS family_trips(room INTEGER,trip INTEGER UNIQUE);')
+    def enter_room(role,room_id):
+        with ns['db']() as c:
+            guest=c.execute('INSERT INTO users(username,name,password,app_role) VALUES(?,?,?,?)',('guest_'+secrets.token_hex(16),'부모' if role=='parent' else '여행하는 자녀',ns['generate_password_hash'](secrets.token_urlsafe(48)),role)).lastrowid
+            c.execute('INSERT INTO family_people(room,user) VALUES(?,?)',(room_id,guest))
+            for tr in c.execute('SELECT trip FROM family_trips WHERE room=?',(room_id,)).fetchall():
+                c.execute('INSERT OR IGNORE INTO members(trip,user,role) VALUES(?,?,?)',(tr['trip'],guest,role))
+        with client.session_transaction() as sess:
+            sess.clear();sess['uid']=guest;sess['csrf']=secrets.token_hex(24);sess.permanent=True
+        st.session_state.in_trip=False
+        st.session_state.entry_stage='family'
+        st.rerun()
+    stage=st.session_state.get('entry_stage','family')
+    if stage=='parent_code':
+        st.subheader('가족 코드 입력')
+        with st.form('parent_entry_code'):
+            code=st.text_input('가족 코드',placeholder='자녀가 알려준 가족 코드')
+            if st.form_submit_button('입장하기',type='primary',use_container_width=True):
                 with ns['db']() as c:
-                    guest=c.execute('INSERT INTO users(username,name,password,app_role) VALUES(?,?,?,?)',
-                        ('guest_'+secrets.token_hex(16),'부모' if choice=='parent' else '여행하는 자녀',ns['generate_password_hash'](secrets.token_urlsafe(48)),choice)).lastrowid
-            with client.session_transaction() as sess:
-                sess.clear();sess['uid']=guest;sess['csrf']=secrets.token_hex(24);sess.permanent=True
-            st.rerun()
-        if st.button('← 처음으로'): st.session_state.entry_stage='cover';st.rerun()
-    st.caption('초대 코드는 가족에게만 알려주세요.')
+                    room=c.execute('SELECT id FROM family_rooms WHERE code=?',(code.strip().upper(),)).fetchone()
+                if room: enter_room('parent',room['id'])
+                else: st.error('가족 코드를 확인해 주세요.')
+        if st.button('← 돌아가기'): st.session_state.entry_stage='family';st.rerun()
+    else:
+        st.markdown('<div class="entry-logo"><div class="walking-logo">🐰🎒</div><h1>안심여행</h1></div>',unsafe_allow_html=True)
+        st.subheader('👨‍👩‍👧 가족방')
+        if st.button('가족 코드 만들기',type='primary',use_container_width=True):
+            with ns['db']() as c:
+                code=secrets.token_hex(5).upper()
+                rid=c.execute('INSERT INTO family_rooms(code) VALUES(?)',(code,)).lastrowid
+            st.session_state.pending_room=rid;st.session_state.pending_code=code
+        if st.session_state.get('pending_code'):
+            st.code(st.session_state.pending_code,language=None)
+        if st.button('🏡 부모로 시작하기',use_container_width=True):
+            st.session_state.entry_stage='parent_code';st.rerun()
+        if st.button('🎒 자녀로 시작하기',use_container_width=True):
+            if st.session_state.get('pending_room'): enter_room('child',st.session_state.pending_room)
+            else: st.session_state.entry_stage='child_code';st.rerun()
+        if stage=='child_code':
+            with st.form('child_entry_code'):
+                code=st.text_input('참여할 가족 코드')
+                if st.form_submit_button('자녀로 입장',type='primary'):
+                    with ns['db']() as c:
+                        room=c.execute('SELECT id FROM family_rooms WHERE code=?',(code.strip().upper(),)).fetchone()
+                    if room: enter_room('child',room['id'])
+                    else: st.error('가족 코드를 확인해 주세요.')
     st.stop()
 
 def switch_family_view(target):
@@ -200,7 +225,7 @@ with st.sidebar:
         st.session_state.in_trip=False;st.rerun()
     if st.button('🚪 첫 화면',use_container_width=True):
         with client.session_transaction() as sess: sess.clear()
-        st.session_state.entry_stage='cover';st.session_state.in_trip=False;st.rerun()
+        st.session_state.entry_stage='family';st.session_state.in_trip=False;st.rerun()
 def family_role_buttons():
     st.markdown('#### 가족 화면 선택')
     a,b=st.columns(2)
@@ -213,7 +238,7 @@ def family_role_buttons():
 
 if not family:
     st.title('🏡 부모 가족방' if parent_mode else '🎒 자녀 가족방')
-    family_role_buttons()
+    # Role is chosen at entry, not inside the family lobby.
     st.markdown('### 🐰🎒')
     import secrets
     if st.button('가족 코드 만들기',type='primary',use_container_width=True):
@@ -240,9 +265,12 @@ with ns['db']() as c:
     for tr in c.execute('SELECT trip FROM family_trips WHERE room=?',(family['id'],)).fetchall():
         c.execute('INSERT OR IGNORE INTO members(trip,user,role) VALUES(?,?,?)',(tr['trip'],uid,state['user']['app_role']))
     travels=c.execute('SELECT t.* FROM trips t JOIN family_trips f ON f.trip=t.id WHERE f.room=? ORDER BY t.id DESC',(family['id'],)).fetchall()
+if parent_mode and len(travels)==1 and not st.session_state.get('parent_autopened'):
+    st.session_state.trip_id=travels[0]['id'];st.session_state.in_trip=True
+    st.session_state.parent_autopened=True
 if not st.session_state.get('in_trip') or not travels:
     st.title('🏡 부모 가족방' if parent_mode else '🎒 자녀 가족방')
-    family_role_buttons()
+    # Role is chosen at entry, not inside the family lobby.
     st.caption('가족 초대 코드');st.code(family['code'],language=None)
     for tr in travels:
         if st.button('🧳 '+tr['title'],key='enter'+str(tr['id']),use_container_width=True):
