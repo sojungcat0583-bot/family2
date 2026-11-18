@@ -196,17 +196,24 @@ with ns['db']() as c:
     family=c.execute('SELECT r.* FROM family_rooms r JOIN family_people m ON r.id=m.room WHERE m.user=? ORDER BY r.id LIMIT 1',(uid,)).fetchone()
 with st.sidebar:
     st.markdown('### '+('🏡 부모' if parent_mode else '🎒 자녀'))
-    if st.button('🏡 부모 화면',disabled=parent_mode,use_container_width=True):
-        switch_family_view('parent')
-    if st.button('🎒 자녀 화면',disabled=not parent_mode,use_container_width=True):
-        switch_family_view('child')
     if st.button('👨‍👩‍👧 가족방 · 여행 목록',use_container_width=True):
         st.session_state.in_trip=False;st.rerun()
     if st.button('🚪 첫 화면',use_container_width=True):
         with client.session_transaction() as sess: sess.clear()
         st.session_state.entry_stage='cover';st.session_state.in_trip=False;st.rerun()
+def family_role_buttons():
+    st.markdown('#### 가족 화면 선택')
+    a,b=st.columns(2)
+    if a.button('🏡 부모 화면',disabled=parent_mode,use_container_width=True,key='family_parent'):
+        st.session_state.in_trip=False
+        switch_family_view('parent')
+    if b.button('🎒 자녀 화면',disabled=not parent_mode,use_container_width=True,key='family_child'):
+        st.session_state.in_trip=False
+        switch_family_view('child')
+
 if not family:
     st.title('🏡 부모 가족방' if parent_mode else '🎒 자녀 가족방')
+    family_role_buttons()
     st.markdown('### 🐰🎒')
     import secrets
     if st.button('가족 코드 만들기',type='primary',use_container_width=True):
@@ -235,6 +242,7 @@ with ns['db']() as c:
     travels=c.execute('SELECT t.* FROM trips t JOIN family_trips f ON f.trip=t.id WHERE f.room=? ORDER BY t.id DESC',(family['id'],)).fetchall()
 if not st.session_state.get('in_trip') or not travels:
     st.title('🏡 부모 가족방' if parent_mode else '🎒 자녀 가족방')
+    family_role_buttons()
     st.caption('가족 초대 코드');st.code(family['code'],language=None)
     for tr in travels:
         if st.button('🧳 '+tr['title'],key='enter'+str(tr['id']),use_container_width=True):
@@ -320,6 +328,18 @@ def arrival_panel():
     if not alerts: st.caption('긴급 도움 요청이 없어요.')
     for emergency in alerts:
         st.error('🆘 '+who(emergency['user'])+' · 도움 요청 · '+emergency['created'].replace('T',' '))
+
+GEO_BUTTON_HTML = '<!doctype html><html lang="ko"><meta charset="utf-8"><style>html,body{margin:0;background:transparent;font-family:Arial,sans-serif}button{width:100%;height:56px;border:0;border-radius:24px;background:#2d705b;color:white;font-size:18px;font-weight:700;cursor:pointer}button:disabled{opacity:.7}</style><button id="gps" type="button">📍 위치공유 켜기</button><script>\nfunction send(type,more={}){window.parent.postMessage({isStreamlitMessage:true,type,...more},\'*\')}\nsend(\'streamlit:componentReady\',{apiVersion:1});send(\'streamlit:setFrameHeight\',{height:62});\nwindow.addEventListener(\'message\',e=>{if(e.data.type===\'streamlit:render\')send(\'streamlit:setFrameHeight\',{height:62})});\nconst b=document.getElementById(\'gps\');b.onclick=()=>{if(!navigator.geolocation){send(\'streamlit:setComponentValue\',{value:{error:\'이 브라우저는 위치 기능을 지원하지 않습니다.\'}});return}b.disabled=true;b.textContent=\'📡 위치 확인 중…\';navigator.geolocation.getCurrentPosition(p=>{b.disabled=false;b.textContent=\'📍 내 위치 다시 보내기\';send(\'streamlit:setComponentValue\',{value:{latitude:p.coords.latitude,longitude:p.coords.longitude,accuracy:p.coords.accuracy,timestamp:p.timestamp}})},e=>{b.disabled=false;b.textContent=\'📍 위치공유 다시 시도\';send(\'streamlit:setComponentValue\',{value:{error:e.code===1?\'브라우저 설정에서 위치 권한을 허용해 주세요.\':\'위치를 확인하지 못했습니다. GPS와 네트워크를 확인해 주세요.\'}})},{enableHighAccuracy:true,timeout:20000,maximumAge:0})};\n</script></html>'
+def location_share_button():
+    from pathlib import Path
+    import streamlit.components.v1 as components
+    import tempfile
+    folder=Path(tempfile.gettempdir())/'ansim_geo_button_v1'
+    folder.mkdir(exist_ok=True)
+    html=GEO_BUTTON_HTML
+    (folder/'index.html').write_text(html,encoding='utf-8')
+    component=components.declare_component('ansim_location_button_v1',path=str(folder))
+    return component(key='gps_full_button_'+str(selected),default=None)
 
 menus=['홈','위치','사진','일정','알림','미션'] if is_parent else ['홈','일정','사진','위치','긴급','미션']
 icons=['🏡','📍','📸','🧭','🔔','🎁'] if is_parent else ['🎒','🧭','📸','📍','🆘','🎁']
@@ -459,17 +479,17 @@ elif page=='위치':
         if not me['consent']:
             if st.button('📍 동의하고 위치 공유 켜기',type='primary',use_container_width=True): act('consent',enabled=True)
         else:
-            from streamlit_geolocation import streamlit_geolocation
+            # Native geolocation component with a readable, full-width button.
             import time as gps_time
-            st.markdown('#### 📍 위치 켜기')
-            st.caption('아래 위치 아이콘을 누르고 브라우저의 위치 권한을 허용해 주세요.')
-            loc=streamlit_geolocation()
+            loc=location_share_button()
+            if loc and loc.get('error'): st.warning(loc['error'])
             if loc and loc.get('latitude') is not None and loc.get('longitude') is not None:
                 stamp=gps_time.time()
                 last=st.session_state.get('gps_sent_'+str(selected),0)
-                if stamp-last>=30:
+                if loc.get('timestamp')!=st.session_state.get('gps_timestamp_'+str(selected)):
                     call('/api/action',dict(action='location',trip=selected,lat=loc['latitude'],lon=loc['longitude']))
                     st.session_state['gps_sent_'+str(selected)]=stamp
+                    st.session_state['gps_timestamp_'+str(selected)]=loc.get('timestamp')
                     st.success('✅ 위치 전송 완료 · 부모 지도에서 확인할 수 있어요.')
                 if st.button('📍 현재 위치 다시 전송',type='primary',use_container_width=True):
                     act('location',lat=loc['latitude'],lon=loc['longitude'])
