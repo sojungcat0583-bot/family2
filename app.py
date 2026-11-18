@@ -28,7 +28,7 @@ def backend(build_version):
 import hashlib
 BUILD_ID=hashlib.sha256(BACKEND_SOURCE.encode()).hexdigest()
 server=backend(BUILD_ID)
-st.caption('🛠 미션 권한 수정본 · MISSION-06')
+
 if st.session_state.get('backend_build')!=BUILD_ID:
     st.session_state.pop('client',None)
     st.session_state.backend_build=BUILD_ID
@@ -118,7 +118,7 @@ except ValueError: state=None
 if not state:
     stage=st.session_state.get('entry_stage','cover')
     if stage=='cover':
-        st.markdown('<div class="entry-logo"><div class="walking-logo">☀️ ☁️ 🗺️<br>🐰🎒 🐻🧳 🐥<br>🌿 👣 🌼</div><h1>안심여행</h1><p>마음은 함께, 여행은 신나게</p></div>',unsafe_allow_html=True)
+        st.markdown('<div class="entry-logo"><div class="walking-logo">🐰🎒</div><h1>안심여행</h1><p>마음은 함께, 여행은 신나게</p></div>',unsafe_allow_html=True)
         if st.button('앱 열기 ✨',type='primary',use_container_width=True):
             st.session_state.entry_stage='role';st.rerun()
     else:
@@ -139,7 +139,7 @@ if not state:
                 sess.clear();sess['uid']=guest;sess['csrf']=secrets.token_hex(24);sess.permanent=True
             st.rerun()
         if st.button('← 처음으로'): st.session_state.entry_stage='cover';st.rerun()
-    st.caption('회원가입 없는 체험 버전 · 초대 코드를 아는 사람이 참여할 수 있어요. 실제 민감정보는 올리지 마세요. 연결을 잃으면 기존 이용자로 복구할 수 없습니다.')
+    st.caption('초대 코드는 가족에게만 알려주세요.')
     st.stop()
 
 def switch_family_view(target):
@@ -153,6 +153,9 @@ def switch_family_view(target):
             if not target_id or not c.execute('SELECT 1 FROM users WHERE id=?',(target_id,)).fetchone():
                 target_id=c.execute('INSERT INTO users(username,name,password,app_role) VALUES(?,?,?,?)',('guest_'+secrets.token_hex(16),'부모' if target=='parent' else '여행하는 자녀',ns['generate_password_hash'](secrets.token_urlsafe(48)),target)).lastrowid
                 profiles[target]=target_id
+            if c.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='family_people'").fetchone():
+                room=c.execute('SELECT room FROM family_people WHERE user=? LIMIT 1',(state['user']['id'],)).fetchone()
+                if room: c.execute('INSERT OR IGNORE INTO family_people(room,user) VALUES(?,?)',(room['room'],target_id))
             # Same-device preview pairs only the current session's two identities.
             for travel in state['trips']:
                 c.execute('INSERT OR IGNORE INTO members(trip,user,role) VALUES(?,?,?)',(travel['id'],target_id,target))
@@ -162,17 +165,11 @@ def switch_family_view(target):
     st.rerun()
 
 st.session_state.setdefault('family_profiles',{})[state['user']['app_role']]=state['user']['id']
-a,b=st.columns(2)
-if a.button('🏡 부모 화면',use_container_width=True,disabled=state['user']['app_role']=='parent'):
-    switch_family_view('parent')
-if b.button('🎒 자녀 화면',use_container_width=True,disabled=state['user']['app_role']=='child'):
-    switch_family_view('child')
-st.caption('같은 기기 체험 전환 · 마지막 공유 위치와 기록은 유지돼요. 부모 화면에서는 자녀 GPS가 새로 전송되지 않아요.')
 uid=state['user']['id']
 parent_mode=state['user'].get('app_role')=='parent'
 with st.sidebar:
     st.write(('🏡 ' if parent_mode else '🎒 ')+state['user']['name'])
-    st.caption('위치는 동의 후 수동 전송 · 앱을 닫으면 자동 추적하지 않습니다. 로컬 데이터는 재배포 시 보존되지 않을 수 있습니다.')
+
 def travel_entry():
     with st.expander('💌 초대 코드로 참여',expanded=parent_mode):
         with st.form('join'):
@@ -192,10 +189,71 @@ def travel_entry():
                         try:
                             r=call('/api/trips',dict(title=title,start=str(dates[0]),end=str(dates[1])));st.session_state.trip_id=r['trip'];st.rerun()
                         except ValueError as e: st.error(str(e))
-if not state['trips']:
-    st.markdown('<div class="travel-banner"><span class="travel-art">☀️ ☁️ 🗺️<br>🐰🎒 🐻🧳 🐥<br>🌿 👣 🌼</span><h3>여행을 시작해요</h3></div>',unsafe_allow_html=True)
-    travel_entry()
+# Family rooms group multiple trips; all membership is checked server-side here.
+ns=backend_scope(BACKEND_SOURCE)
+with ns['db']() as c:
+    c.executescript('CREATE TABLE IF NOT EXISTS family_rooms(id INTEGER PRIMARY KEY,code TEXT UNIQUE); CREATE TABLE IF NOT EXISTS family_people(room INTEGER,user INTEGER,UNIQUE(room,user)); CREATE TABLE IF NOT EXISTS family_trips(room INTEGER,trip INTEGER UNIQUE); CREATE TABLE IF NOT EXISTS family_messages(id INTEGER PRIMARY KEY,trip INTEGER,sender INTEGER,body TEXT,created TEXT);')
+    family=c.execute('SELECT r.* FROM family_rooms r JOIN family_people m ON r.id=m.room WHERE m.user=? ORDER BY r.id LIMIT 1',(uid,)).fetchone()
+with st.sidebar:
+    st.markdown('### '+('🏡 부모' if parent_mode else '🎒 자녀'))
+    if st.button('🏡 부모 화면',disabled=parent_mode,use_container_width=True):
+        switch_family_view('parent')
+    if st.button('🎒 자녀 화면',disabled=not parent_mode,use_container_width=True):
+        switch_family_view('child')
+    if st.button('👨‍👩‍👧 가족방 · 여행 목록',use_container_width=True):
+        st.session_state.in_trip=False;st.rerun()
+    if st.button('🚪 첫 화면',use_container_width=True):
+        with client.session_transaction() as sess: sess.clear()
+        st.session_state.entry_stage='cover';st.session_state.in_trip=False;st.rerun()
+if not family:
+    st.title('🏡 부모 가족방' if parent_mode else '🎒 자녀 가족방')
+    st.markdown('### 🐰🎒')
+    import secrets
+    if st.button('가족 코드 만들기',type='primary',use_container_width=True):
+        with ns['db']() as c:
+            code=secrets.token_hex(5).upper()
+            rid=c.execute('INSERT INTO family_rooms(code) VALUES(?)',(code,)).lastrowid
+            c.execute('INSERT INTO family_people(room,user) VALUES(?,?)',(rid,uid))
+            for tr in state['trips']:
+                c.execute('INSERT OR IGNORE INTO family_trips(room,trip) VALUES(?,?)',(rid,tr['id']))
+        st.rerun()
+    with st.form('family_join'):
+        fc=st.text_input('가족 코드 입력')
+        if st.form_submit_button('가족방 참여',use_container_width=True):
+            with ns['db']() as c:
+                room=c.execute('SELECT id FROM family_rooms WHERE code=?',(fc.strip().upper(),)).fetchone()
+                if room:
+                    c.execute('INSERT OR IGNORE INTO family_people(room,user) VALUES(?,?)',(room['id'],uid))
+                    for tr in c.execute('SELECT trip FROM family_trips WHERE room=?',(room['id'],)).fetchall():
+                        c.execute('INSERT OR IGNORE INTO members(trip,user,role) VALUES(?,?,?)',(tr['trip'],uid,state['user']['app_role']))
+            if room: st.rerun()
+            else: st.error('가족 코드를 확인해 주세요.')
     st.stop()
+with ns['db']() as c:
+    for tr in c.execute('SELECT trip FROM family_trips WHERE room=?',(family['id'],)).fetchall():
+        c.execute('INSERT OR IGNORE INTO members(trip,user,role) VALUES(?,?,?)',(tr['trip'],uid,state['user']['app_role']))
+    travels=c.execute('SELECT t.* FROM trips t JOIN family_trips f ON f.trip=t.id WHERE f.room=? ORDER BY t.id DESC',(family['id'],)).fetchall()
+if not st.session_state.get('in_trip') or not travels:
+    st.title('🏡 부모 가족방' if parent_mode else '🎒 자녀 가족방')
+    st.caption('가족 초대 코드');st.code(family['code'],language=None)
+    for tr in travels:
+        if st.button('🧳 '+tr['title'],key='enter'+str(tr['id']),use_container_width=True):
+            st.session_state.trip_id=tr['id'];st.session_state.in_trip=True;st.session_state.page='홈';st.rerun()
+    with st.expander('＋ 여행 만들기'):
+        with st.form('new_family_trip'):
+            title=st.text_input('여행 이름',placeholder='서울 여행 가기')
+            dates=st.date_input('여행 기간',value=(date.today(),date.today()))
+            if st.form_submit_button('여행 만들기',type='primary'):
+                if len(dates)!=2 or not title.strip(): st.error('이름과 여행 기간을 입력해 주세요.')
+                else:
+                    r=call('/api/trips',dict(title=title,start=str(dates[0]),end=str(dates[1])))
+                    with ns['db']() as c:
+                        c.execute('INSERT INTO family_trips(room,trip) VALUES(?,?)',(family['id'],r['trip']))
+                        for person in c.execute('SELECT u.id,u.app_role FROM users u JOIN family_people f ON f.user=u.id WHERE f.room=?',(family['id'],)).fetchall():
+                            c.execute('INSERT OR IGNORE INTO members(trip,user,role) VALUES(?,?,?)',(r['trip'],person['id'],person['app_role']))
+                    st.rerun()
+    st.stop()
+state=call('/api/state?trip='+str(st.session_state.get('trip_id') or travels[0]['id']))
 ids=[t['id'] for t in state['trips']]
 selected=st.sidebar.selectbox('여행',ids,index=ids.index(state['trip']),format_func=lambda x:next(t['title'] for t in state['trips'] if t['id']==x))
 if selected!=state['trip']: st.session_state.trip_id=selected;st.rerun()
@@ -254,7 +312,6 @@ def map_panel():
     mp.get_root().html.add_child(branca.element.Element(summary))
     components.html(mp.get_root().render(),height=620,scrolling=False)
     for m in pins: st.caption('🐰 '+m['name']+' · 마지막 전송 '+str(m['updated']).replace('T',' '))
-    st.caption('선은 오늘 전송된 좌표를 연결한 기록이며 실제 이동 도로와 다를 수 있어요. 공유 중지 시 경로도 삭제돼요.')
 
 @st.fragment(run_every='12s')
 def arrival_panel():
@@ -267,12 +324,12 @@ def arrival_panel():
 menus=['홈','위치','사진','일정','알림','미션'] if is_parent else ['홈','일정','사진','위치','긴급','미션']
 icons=['🏡','📍','📸','🧭','🔔','🎁'] if is_parent else ['🎒','🧭','📸','📍','🆘','🎁']
 page=st.session_state.get('page','홈')
-if page not in menus: page='홈';st.session_state.page=page
-with st.container(key='bottom_nav'):
-    cols=st.columns(len(menus))
-    for col,name,icon in zip(cols,menus,icons):
-        if col.button(icon+' '+name,key='nav'+name,use_container_width=True,type='primary' if page==name else 'secondary'):
+if page not in menus+['메시지']: page='홈';st.session_state.page=page
+with st.sidebar:
+    for name,icon in zip(menus,icons):
+        if st.button(icon+' '+name,key='nav'+name,use_container_width=True,type='primary' if page==name else 'secondary'):
             st.session_state.page=name;st.rerun()
+    if st.button('💬 가족 메시지',use_container_width=True): st.session_state.page='메시지';st.rerun()
 st.markdown('''<style>
 .block-container{padding-top:.6rem!important;padding-bottom:110px!important}
 .st-key-bottom_nav{position:fixed!important;bottom:0;left:50%;transform:translateX(-50%);width:min(860px,100%);z-index:999;background:#fffdf6!important;border-top:1px solid #c9dfce;border-radius:22px 22px 0 0;padding:10px 5px calc(10px + env(safe-area-inset-bottom));box-shadow:0 -5px 20px #183d3612}
@@ -283,7 +340,20 @@ st.markdown('''<style>
 </style>''',unsafe_allow_html=True)
 head={'홈':'🏡 우리 아이 안심홈' if is_parent else '🎒 오늘의 여행','사진':'📸 아이의 사진' if is_parent else '📸 여행 사진','일정':'🧭 아이의 일정' if is_parent else '🧭 내 일정','알림':'🔔 긴급 알림','위치':'📍 가족 지도' if is_parent else '📍 내 위치 공유','미션':'🎁 여행 퀘스트','긴급':'🆘 긴급 도움'}
 st.subheader(head[page])
-if page=='홈':
+st.markdown('### '+('🏡 부모 · ' if is_parent else '🎒 자녀 · ')+trip['title'])
+if page=='메시지':
+    with ns['db']() as c:
+        messages=c.execute('SELECT m.*,u.name FROM family_messages m JOIN users u ON u.id=m.sender WHERE trip=? ORDER BY m.id DESC LIMIT 100',(selected,)).fetchall()
+    for message in reversed(messages):
+        with st.chat_message('assistant' if message['sender']!=uid else 'user'):
+            st.write(message['name']);st.text(message['body']);st.caption(message['created'])
+    msg=st.chat_input('가족에게 메시지 보내기')
+    if msg and msg.strip():
+        with ns['db']() as c:
+            if not c.execute('SELECT 1 FROM members WHERE trip=? AND user=?',(selected,uid)).fetchone(): st.stop()
+            c.execute('INSERT INTO family_messages(trip,sender,body,created) VALUES(?,?,?,?)',(selected,uid,msg.strip()[:2000],__import__('datetime').datetime.now(__import__('zoneinfo').ZoneInfo('Asia/Seoul')).isoformat(timespec='seconds')))
+        st.rerun()
+elif page=='홈':
     if is_parent:
         map_panel()
         st.markdown('#### 🔔 가족 알림')
@@ -292,16 +362,13 @@ if page=='홈':
         if latest:
             st.markdown('#### 📸 최근 소식');show_post(latest)
     else:
-        st.markdown('<div class="hero"><div class="mascot">☁️ ☀️ ☁️<br>🐰🎒 🐻🧳 🐥<br>🌼 🌿 👣 🌿 🌼</div><h3>오늘은 어디로 떠날까?</h3></div>',unsafe_allow_html=True)
-        if st.button('💚 잘 지내요',type='primary',use_container_width=True): act('well')
+        st.markdown('<div style="text-align:center;font-size:100px;line-height:1.4">🐰🎒</div>',unsafe_allow_html=True)
         if st.button('📍 현재 위치 공유',use_container_width=True): st.session_state.page='위치';st.rerun()
         st.markdown('#### 💌 부모님 초대 코드')
         st.code(trip['code'],language=None)
         for q in state['plans']:
             if q.get('plan_user')==uid and q['status']!='완료':
                 st.info('🧭 다음 · '+q['title']);break
-    with st.expander('＋ 다른 여행 만들기 · 참여'):
-        travel_entry()
 elif page=='알림': arrival_panel()
 elif page=='일정':
     for q in state['plans']:
@@ -394,7 +461,8 @@ elif page=='위치':
         else:
             from streamlit_geolocation import streamlit_geolocation
             import time as gps_time
-            st.caption('📡 아래 위치 버튼으로 브라우저 GPS를 허용해 주세요. 좌표를 받으면 가족에게 자동 전송돼요.')
+            st.markdown('#### 📍 위치 켜기')
+            st.caption('아래 위치 아이콘을 누르고 브라우저의 위치 권한을 허용해 주세요.')
             loc=streamlit_geolocation()
             if loc and loc.get('latitude') is not None and loc.get('longitude') is not None:
                 stamp=gps_time.time()
@@ -473,7 +541,6 @@ elif page=='미션':
             st.caption(who(q['target'])+' · '+str(q.get('approved_at') or q['created']).replace('T',' '))
             st.write('입금 대기' if q['status']=='지급 대기' else '외부 입금 기록 완료')
             if q['paid_at']: st.caption('입금 기록 '+q['paid_at'].replace('T',' '))
-    st.caption('실제 송금 없음 · 부모가 별도로 지급한 용돈을 기록하는 기능입니다.')
     if not is_parent:
         for mission in state['missions']:
             if mission['target']==uid and mission['status']=='확인 대기' and mission.get('evidence'):
@@ -484,5 +551,7 @@ elif page=='미션':
     else:
         completed=[q for q in state['missions'] if q['maker']==uid and q.get('approved_at')]
         if completed: st.success('🔔 미션 성공 소식 '+str(len(completed))+'건 · 아래 용돈 적립장에서 확인해 주세요.')
-with st.sidebar.expander('🔒 안내'):
-    st.caption('도착 감지 알림은 사용하지 않습니다. 문자가 아닌 앱 내 기록입니다. 부모의 홈·알림은 화면을 열어 둔 동안 12초 주기로 갱신됩니다. 자녀가 현재 위치를 직접 전송할 때만 도착을 감지합니다. GPS 오차에 따라 실제 도착과 다를 수 있습니다. 좌표를 지도에 표시할 때 외부 지도 서비스를 이용합니다. 사진 EXIF는 제거합니다.')
+with st.sidebar.expander('🔒 개인정보'):
+    st.caption('위치는 동의한 여행 기간에만 공유됩니다. 앱 종료 시 자동 추적은 지원하지 않습니다.')
+
+st.markdown('<style>.block-container{padding-top:1rem!important;padding-bottom:2rem!important}.walking-logo,.travel-art,.mascot{font-size:90px!important;line-height:1.3!important}.st-key-bottom_nav{display:none!important}</style>',unsafe_allow_html=True)
