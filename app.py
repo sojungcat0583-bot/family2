@@ -241,7 +241,7 @@ with ns['db']() as c:
     available=c.execute('SELECT t.id,t.title FROM trips t JOIN members m ON m.trip=t.id WHERE m.user=? ORDER BY t.id DESC',(uid,)).fetchall()
 with st.sidebar:
     st.markdown('### 🧭 기능 메뉴')
-    navitems=[('🏡','홈'),('📍','위치'),('📸','사진'),('🧭','일정'),('🔔','알림'),('🎁','미션'),('💬','메시지')] if parent_mode else [('🎒','홈'),('🧭','일정'),('📸','사진'),('📍','위치'),('🆘','긴급'),('🎁','미션'),('💬','메시지')]
+    navitems=[('🏡','홈'),('📍','위치'),('📸','사진'),('🧭','일정'),('🔔','알림'),('🎁','미션')] if parent_mode else [('🎒','홈'),('🧭','일정'),('📸','사진'),('📍','위치'),('🆘','긴급'),('🎁','미션')]
     for icon,name in navitems:
         label='가족 메시지' if name=='메시지' else ('자녀 위치' if parent_mode and name=='위치' else name)
         if st.button(icon+' '+label,key='persistent_nav_'+name,use_container_width=True):
@@ -387,7 +387,7 @@ def location_share_button():
 menus=['홈','위치','사진','일정','알림','미션'] if is_parent else ['홈','일정','사진','위치','긴급','미션']
 icons=['🏡','📍','📸','🧭','🔔','🎁'] if is_parent else ['🎒','🧭','📸','📍','🆘','🎁']
 page=st.session_state.get('page','홈')
-if page not in menus+['메시지']: page='홈';st.session_state.page=page
+if page not in menus: page='홈';st.session_state.page=page
 st.markdown('''<style>
 .block-container{padding-top:.6rem!important;padding-bottom:110px!important}
 .st-key-bottom_nav{position:fixed!important;bottom:0;left:50%;transform:translateX(-50%);width:min(860px,100%);z-index:999;background:#fffdf6!important;border-top:1px solid #c9dfce;border-radius:22px 22px 0 0;padding:10px 5px calc(10px + env(safe-area-inset-bottom));box-shadow:0 -5px 20px #183d3612}
@@ -397,21 +397,9 @@ st.markdown('''<style>
 .st-key-bottom_nav button p{font-size:12px!important;white-space:normal!important}
 </style>''',unsafe_allow_html=True)
 head={'홈':'🏡 우리 아이 안심홈' if is_parent else '🎒 오늘의 여행','사진':'📸 아이의 사진' if is_parent else '📸 여행 사진','일정':'🧭 아이의 일정' if is_parent else '🧭 내 일정','알림':'🔔 긴급 알림','위치':'📍 가족 지도' if is_parent else '📍 내 위치 공유','미션':'🎁 여행 퀘스트','긴급':'🆘 긴급 도움'}
-st.subheader(head[page])
+st.subheader(head.get(page,'🏡 홈'))
 st.markdown('### '+('🏡 부모 · ' if is_parent else '🎒 자녀 · ')+trip['title'])
-if page=='메시지':
-    with ns['db']() as c:
-        messages=c.execute('SELECT m.*,u.name FROM family_messages m JOIN users u ON u.id=m.sender WHERE trip=? ORDER BY m.id DESC LIMIT 100',(selected,)).fetchall()
-    for message in reversed(messages):
-        with st.chat_message('assistant' if message['sender']!=uid else 'user'):
-            st.write(message['name']);st.text(message['body']);st.caption(message['created'])
-    msg=st.chat_input('가족에게 메시지 보내기')
-    if msg and msg.strip():
-        with ns['db']() as c:
-            if not c.execute('SELECT 1 FROM members WHERE trip=? AND user=?',(selected,uid)).fetchone(): st.stop()
-            c.execute('INSERT INTO family_messages(trip,sender,body,created) VALUES(?,?,?,?)',(selected,uid,msg.strip()[:2000],__import__('datetime').datetime.now(__import__('zoneinfo').ZoneInfo('Asia/Seoul')).isoformat(timespec='seconds')))
-        st.rerun()
-elif page=='홈':
+if page=='홈':
     if is_parent:
         map_panel()
         st.markdown('#### 🔔 가족 알림')
