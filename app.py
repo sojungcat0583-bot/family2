@@ -236,6 +236,21 @@ def family_role_buttons():
         st.session_state.in_trip=False
         switch_family_view('child')
 
+# Navigation is also available in the family lobby, before any early stop.
+with ns['db']() as c:
+    available=c.execute('SELECT t.id,t.title FROM trips t JOIN members m ON m.trip=t.id WHERE m.user=? ORDER BY t.id DESC',(uid,)).fetchall()
+with st.sidebar:
+    st.markdown('### 🧭 기능 메뉴')
+    navitems=[('🏡','홈'),('📍','위치'),('📸','사진'),('🧭','일정'),('🔔','알림'),('🎁','미션'),('💬','메시지')] if parent_mode else [('🎒','홈'),('🧭','일정'),('📸','사진'),('📍','위치'),('🆘','긴급'),('🎁','미션'),('💬','메시지')]
+    for icon,name in navitems:
+        label='가족 메시지' if name=='메시지' else ('자녀 위치' if parent_mode and name=='위치' else name)
+        if st.button(icon+' '+label,key='persistent_nav_'+name,use_container_width=True):
+            if available:
+                if st.session_state.get('trip_id') not in [x['id'] for x in available]: st.session_state.trip_id=available[0]['id']
+                st.session_state.in_trip=True;st.session_state.page=name;st.rerun()
+            else:
+                st.info('가족방에서 여행을 먼저 만들거나 참여해 주세요.')
+
 if not family:
     st.title('🏡 부모 가족방' if parent_mode else '🎒 자녀 가족방')
     # Role is chosen at entry, not inside the family lobby.
@@ -373,11 +388,6 @@ menus=['홈','위치','사진','일정','알림','미션'] if is_parent else ['�
 icons=['🏡','📍','📸','🧭','🔔','🎁'] if is_parent else ['🎒','🧭','📸','📍','🆘','🎁']
 page=st.session_state.get('page','홈')
 if page not in menus+['메시지']: page='홈';st.session_state.page=page
-with st.sidebar:
-    for name,icon in zip(menus,icons):
-        if st.button(icon+' '+name,key='nav'+name,use_container_width=True,type='primary' if page==name else 'secondary'):
-            st.session_state.page=name;st.rerun()
-    if st.button('💬 가족 메시지',use_container_width=True): st.session_state.page='메시지';st.rerun()
 st.markdown('''<style>
 .block-container{padding-top:.6rem!important;padding-bottom:110px!important}
 .st-key-bottom_nav{position:fixed!important;bottom:0;left:50%;transform:translateX(-50%);width:min(860px,100%);z-index:999;background:#fffdf6!important;border-top:1px solid #c9dfce;border-radius:22px 22px 0 0;padding:10px 5px calc(10px + env(safe-area-inset-bottom));box-shadow:0 -5px 20px #183d3612}
