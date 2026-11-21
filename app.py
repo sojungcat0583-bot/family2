@@ -530,18 +530,35 @@ elif page=='긴급':
     st.caption('자동 신고·문자·푸시 기능이 아닙니다. 부모가 앱의 홈 또는 알림 화면을 보고 있을 때 표시됩니다. 해외에서는 현지 긴급번호를 이용하세요.')
 elif page=='미션':
     st.markdown('<div class="quest-banner"><span style="font-size:40px">🌈 🐰🎒 🐻🧳 🐥</span><h3>두근두근 여행 퀘스트</h3><p>도전하고, 추억 쌓고, 보상 받기!</p></div>',unsafe_allow_html=True)
+    if not is_parent:
+        def mission_snapshot(payload):
+            return [(q['id'],q['status'],q.get('evidence'),q.get('received')) for q in payload['missions'] if q['target']==uid]
+
+        @st.fragment(run_every='5s')
+        def watch_missions():
+            if st.button('🔄 미션 새로고침', key='refresh_missions'):
+                st.rerun(scope='app')
+            try:
+                fresh=call('/api/state?trip='+str(selected))
+            except ValueError:
+                return
+            if mission_snapshot(fresh)!=mission_snapshot(state):
+                st.rerun(scope='app')
+
+        watch_missions()
+        st.caption(f'미션 수신 번호: {uid} · 여행: {trip["title"]}')
     if is_parent:
-        children=[m for m in state['members'] if m['role']=='child']
+        children=sorted((m for m in state['members'] if m['role']=='child'),key=lambda m:m['user'],reverse=True)
         if children:
             with st.expander('✨ 부모가 미션 내주기',expanded=True):
                 with st.form('quest_new',clear_on_submit=True):
-                    target=st.selectbox('누구에게?', [m['user'] for m in children],format_func=who)
+                    target=st.selectbox('누구에게?', [m['user'] for m in children],format_func=lambda user:f'{who(user)} · 수신 번호 {user}')
                     title=st.text_input('미션',placeholder='예: 바다 앞에서 사진 한 장!',max_chars=200)
                     amount=st.number_input('보상 용돈 (원)',min_value=0,max_value=1000000,step=1000)
                     if st.form_submit_button('🎁 퀘스트 보내기',type='primary',use_container_width=True): act('mission_add',target=target,title=title,amount=amount)
         else: st.info('자녀가 여행에 참여하면 미션을 보낼 수 있어요.')
     quests=[q for q in state['missions'] if is_parent or q['target']==uid]
-    if not quests: st.info('🍀 아직 도착한 퀘스트가 없어요.')
+    if not quests: st.info('🍀 아직 도착한 퀘스트가 없어요.' if is_parent else '🍀 아직 도착한 퀘스트가 없어요. 부모 화면에서 같은 여행과 위 수신 번호를 선택해 주세요.')
     for q in quests:
         with st.container(border=True):
             st.markdown('### 🎯 '+q['title'])
